@@ -1,7 +1,6 @@
 from multiprocessing.managers import SyncManager
 from multiprocessing import shared_memory, Lock
 import numpy as np
-import sys
 from time import sleep
 
 
@@ -17,23 +16,22 @@ class InterProcessInterface:
         return self.data
 
 
-class EventManager(SyncManager): pass
-lock = Lock()
-data_share_api = InterProcessInterface()
-EventManager.register('get_lock', callable=lambda: lock)
-EventManager.register("get_api", callable=lambda: data_share_api)
-
-
 class InterProcessServer:
     def __init__(self, ipc_address, shared_mem_name, shared_mem_template=None):
-        # initiate connections and shared memory blocks
-        self.manager = EventManager(address=ipc_address, authkey=b'secret password')
+        # initiate connections and shared memory blocks, server side
+        class ConnectionManager(SyncManager): pass
+        lock = Lock()
+        data_share_api = InterProcessInterface()
+        ConnectionManager.register('get_lock', callable=lambda: lock)
+        ConnectionManager.register("get_api", callable=lambda: data_share_api)
+
+        self.connection_manager = ConnectionManager(address=ipc_address, authkey=b'secret password')
 
     def start(self):
-        self.manager.start()
-        self._lock = self.manager.get_lock()
+        self.connection_manager.start()
+        self._lock = self.connection_manager.get_lock()
         self._lock.acquire()
-        self._api = self.manager.get_api()
+        self._api = self.connection_manager.get_api()
 
     def test_data_alone(self):
         print(self._api.get_data())
