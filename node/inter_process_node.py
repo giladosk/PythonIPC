@@ -12,7 +12,7 @@ class InterProcessNode:
         # declare custom manager references
         class ConnectionManager(BaseManager): pass
         ConnectionManager.register('get_lock')
-        ConnectionManager.register("get_api")
+        ConnectionManager.register("get_data_api")
         self.connection_manager = ConnectionManager(address=ipc_address, authkey=b'secret password')
         # connect to the server and save references to its objects
         print('connecting to server')
@@ -20,7 +20,7 @@ class InterProcessNode:
             try:
                 self.connection_manager.connect()
                 self._lock = self.connection_manager.get_lock()
-                self._api = self.connection_manager.get_api()
+                self._api = self.connection_manager.get_data_api()
                 break
             except (EOFError, ConnectionRefusedError):
                 continue

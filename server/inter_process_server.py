@@ -26,14 +26,14 @@ class InterProcessServer:
         lock = Lock()
         ConnectionManager.register('get_lock', callable=lambda: lock)
         data_object_api = DataExchangeAPI()
-        ConnectionManager.register("get_api", callable=lambda: data_object_api)
+        ConnectionManager.register("get_data_api", callable=lambda: data_object_api)
         self.connection_manager = ConnectionManager(address=ipc_address, authkey=b'secret password')
         # start the manager and save references to its objects
         print('creating connection server')
         self.connection_manager.start()
         self._lock = self.connection_manager.get_lock()
         self._lock.acquire()
-        self._api = self.connection_manager.get_api()
+        self._api = self.connection_manager.get_data_api()
 
         # init shared memory
         print('creating shared_memory')
