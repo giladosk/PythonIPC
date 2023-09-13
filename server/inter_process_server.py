@@ -25,17 +25,13 @@ class InterProcessServer:
         # init connection objects
         # create custom manager with shared objects
         class ConnectionManager(SyncManager): pass
+
         lock = Lock()
         ConnectionManager.register('get_lock', callable=lambda: lock)
         data_object_api = DataExchangeAPI()
         ConnectionManager.register("get_data_api", callable=lambda: data_object_api)
         self.connection_manager = ConnectionManager(address=ipc_address, authkey=b'secret password')
-        # start the manager and save references to its objects
-        print('creating connection server')
-        self.connection_manager.start()
-        self._lock = self.connection_manager.get_lock()
-        self._lock.acquire()
-        self._api = self.connection_manager.get_data_api()
+        self.create_manager(ipc_address)
 
         # init shared memory
         print('creating shared_memory')
@@ -50,8 +46,17 @@ class InterProcessServer:
         # start the service
         Thread(target=self.start, name='inter_process_server', daemon=True).start()
 
+    def create_manager(self, ipc_address):
+
+        # start the manager and save references to its objects
+        print('creating connection server')
+        self.connection_manager.start()
+        self._lock = self.connection_manager.get_lock()
+        self._lock.acquire()
+        self._api = self.connection_manager.get_data_api()
+
     def start(self):
-        print('subscribed to data stream...\n')
+        print('processing data stream...\n')
         while True:
             if self._lock.acquire(block=False):
                 # if the lock is released, check if the data is new
@@ -79,36 +84,6 @@ class InterProcessServer:
 
         self.shutdown()
 
-    def test_data_alone(self):
-        print(self._api.get_data_object())
-        self._api.update_data_object(1, 1)
-        first_msg = self._api.get_data_object()
-        print(first_msg)
-        return first_msg
-
-    def test_data_with_node(self):
-        return self._api.get_data_object()
-
-    def test_lock(self):
-        print('testing lock')
-        released = self._lock.acquire(block=False)
-        print(f'lock {released=}')
-        while not released:
-            released = self._lock.acquire(block=False)
-        print('client connected to lock')
-
-    def test_shared_memory(self):
-        print('waiting for client to connect to shared memory')
-        # counter = 0
-        while self.shared_array[0, 0] == -1:
-            # counter += 1
-            # if counter == 10000:
-            #     print(f'waiting. {self.shared_array[0, 0]}')
-            #     counter = 0
-            continue
-        print(f'share memory has value of {self.shared_array[0, 0]}')
-        print("shared_memory connected to by client")
-
     def shutdown(self):
         print('shutting down')
         self.connection_manager.shutdown()
@@ -130,19 +105,3 @@ while True:
     if new_data[0]['value'] == 'break':
         break
 
-
-# server.start()
-# first_msg = server.test_data_alone()
-#
-# while True:
-#     new_msg = server.test_data_with_node()
-#     if new_msg['time'] <= first_msg['time']:
-#         sleep(1)
-#         continue
-#     else:
-#         print(new_msg)
-#         break
-#
-# server.test_lock()
-# server.test_shared_memory()
-# server.shutdown()

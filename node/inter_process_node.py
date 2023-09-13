@@ -1,5 +1,6 @@
 from multiprocessing.managers import BaseManager
 from multiprocessing import shared_memory
+from multiprocessing.managers import BaseProxy
 import numpy as np
 from time import sleep
 from queue import Queue, Empty
@@ -18,15 +19,7 @@ class InterProcessNode:
         self.connection_manager = ConnectionManager(address=ipc_address, authkey=b'secret password')
         # connect to the server and save references to its objects
         print('connecting to server')
-        while True:
-            try:
-                self.connection_manager.connect()
-                self._lock = self.connection_manager.get_lock()
-                self._lock.release()
-                self._api = self.connection_manager.get_data_api()
-                break
-            except (EOFError, ConnectionRefusedError):
-                continue
+        self.connect_to_manager()
         print('connected to server')
 
         # init shared memory
@@ -47,47 +40,51 @@ class InterProcessNode:
         # start the service
         Thread(target=self.start, name='inter_process_node', daemon=True).start()
 
-    def start(self):
-        print('subscribed to data stream...\n')
+    def connect_to_manager(self):
+        # if 'localhost' in BaseProxy._address_to_local:
+        #     del BaseProxy._address_to_local[address][0].connection
         while True:
-            # TODO: wrap in try-except to re-establish lost connections
             try:
-                new_results = self.feed_queue.get_nowait()
-                print(f'data extracted from queue: {new_results["value"]}')
-            except Empty:
-                # no new results, wait a bit and try again later
-                sleep(0.1)
-                continue
-
-            if self._lock.acquire(block=True):
-                # when there is new data available, send it to the server
-                self._api.update_data_object(new_results['time'], new_results['value'])
-                self.shared_array[:] = new_results['array'][:]
+                self.connection_manager.connect()
+                self._lock = self.connection_manager.get_lock()
                 self._lock.release()
-                print('data is shared\n')
-                # exit condition:
-                if new_results['value'] == 'break':
-                    print('reached end')
-                    break
-            else:
-                # locked by server, sleep and try again later
+                self._api = self.connection_manager.get_data_api()
+                break  # exit function when connection established
+            except (EOFError, ConnectionRefusedError):
                 sleep(1)
 
+    def start(self):
+        print('processing data stream...\n')
+        while True:
+            try:
+                try:
+                    new_results = self.feed_queue.get_nowait()
+                    print(f'data extracted from queue: {new_results["value"]}')
+                except Empty:
+                    # no new results, wait a bit and try again later
+                    sleep(0.1)
+                    continue
+
+                if self._lock.acquire(block=True):
+                    # when there is new data available, send it to the server
+                    self._api.update_data_object(new_results['time'], new_results['value'])
+                    self.shared_array[:] = new_results['array'][:]
+                    self._lock.release()
+                    print('data is shared\n')
+                    # exit condition:
+                    if new_results['value'] == 'break':
+                        print('reached end')
+                        break
+                else:
+                    # locked by server, sleep and try again later
+                    sleep(1)
+            except (EOFError, ConnectionRefusedError):
+                # server was disconnected, sleep and try again
+                print('trying to re-connect...')
+                self.connect_to_manager()
+                print('connection established')
+
         self.shutdown()
-
-    def test_data(self):
-        print(self._api.get_data_object())
-        self._api.update_data_object(2, 7)
-        print(self._api.get_data_object())
-
-    def test_lock(self):
-        print('releasing lock')
-        self._lock.release()
-
-    def test_shared_memory(self):
-        print(f'share memory has value of {self.shared_array[0, 0]}')
-        self.shared_array[0, 0] = 1
-        print(f'share memory has value of {self.shared_array[0, 0]}')
 
     def shutdown(self):
         print('shutting down')
@@ -119,10 +116,4 @@ print('putting feed3 into queue')
 data_queue.put(feed3)
 sleep(1)
 
-# node.start()
-# node.test_data()
-# node.test_lock()
-# node.test_shared_memory()
-# print('shutting down')
-# node.shm.close()
-# node.shm.unlink()
+
