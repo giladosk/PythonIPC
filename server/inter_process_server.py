@@ -2,6 +2,8 @@ from multiprocessing.managers import SyncManager
 from multiprocessing import shared_memory, Lock
 import numpy as np
 from time import sleep
+from queue import Queue, Full
+from threading import Thread
 
 
 class DataExchangeAPI:
@@ -17,7 +19,7 @@ class DataExchangeAPI:
 
 
 class InterProcessServer:
-    def __init__(self, ipc_address, shared_mem_name, shared_mem_template):
+    def __init__(self, ipc_address, shmem_name, shmem_template, queue):
         # initiate connections and shared memory blocks, server side
 
         # init connection objects
@@ -37,13 +39,44 @@ class InterProcessServer:
 
         # init shared memory
         print('creating shared_memory')
-        self.shm = shared_memory.SharedMemory(create=True, name=shared_mem_name, size=shared_mem_template.nbytes)
-        self.output_array = np.ndarray((200, 200), dtype=np.int64, buffer=self.shm.buf)
-        self.output_array.fill(-1)
+        self.shm = shared_memory.SharedMemory(create=True, name=shmem_name, size=shmem_template.nbytes)
+        self.shared_array = np.ndarray(shmem_template.shape, dtype=np.int64, buffer=self.shm.buf)
+        self.shared_array.fill(-1)
+
+        # link to consumer queue
+        self.consumer_queue = queue
+        self.latest_timestamp = 0
+
+        # start the service
+        Thread(target=self.start, name='inter_process_server', daemon=True).start()
 
     def start(self):
-        # TODO: arrange init<->start calls. "start" should be a thread that get requests and writes to a queue
-        pass
+        print('subscribed to data stream...\n')
+        while True:
+            if self._lock.acquire(block=False):
+                # if the lock is released, check if the data is new
+                data_in_shmem = self._api.get_data_object()
+                if data_in_shmem['time'] > self.latest_timestamp:
+                    print(f'got new data, hurray!')
+                    self.latest_timestamp = data_in_shmem['time']
+                    try:  # push most recent data to the consumer queue
+                        self.consumer_queue.put_nowait((data_in_shmem, self.shared_array))
+                    except Full:
+                        self.consumer_queue.get()
+                        self.consumer_queue.put((data_in_shmem, self.shared_array))
+
+                    # exit condition:
+                    if data_in_shmem['value'] == 'abort':
+                        self._lock.release()
+                        break
+                else:
+                    sleep(0.01)
+                self._lock.release()
+            else:
+                # locked by a node, sleep and try again later
+                sleep(0.01)
+
+        self.shutdown()
 
     def test_data_alone(self):
         print(self._api.get_data_object())
@@ -66,13 +99,13 @@ class InterProcessServer:
     def test_shared_memory(self):
         print('waiting for client to connect to shared memory')
         # counter = 0
-        while self.output_array[0, 0] == -1:
+        while self.shared_array[0, 0] == -1:
             # counter += 1
             # if counter == 10000:
-            #     print(f'waiting. {self.output_array[0, 0]}')
+            #     print(f'waiting. {self.shared_array[0, 0]}')
             #     counter = 0
             continue
-        print(f'share memory has value of {self.output_array[0, 0]}')
+        print(f'share memory has value of {self.shared_array[0, 0]}')
         print("shared_memory connected to by client")
 
     def shutdown(self):
@@ -84,22 +117,32 @@ class InterProcessServer:
 
 
 address = ('localhost', 6000)
+data_queue = Queue(maxsize=1)
 SHM_NAME = "NUMPY_SHMEM"
 array_template = np.ones(shape=(200, 200), dtype=np.int64)
 
-server = InterProcessServer(ipc_address=address, shared_mem_name=SHM_NAME, shared_mem_template=array_template)
-server.start()
-first_msg = server.test_data_alone()
+server = InterProcessServer(ipc_address=address, shmem_name=SHM_NAME, shmem_template=array_template, queue=data_queue)
 
 while True:
-    new_msg = server.test_data_with_node()
-    if new_msg['time'] <= first_msg['time']:
-        sleep(1)
-        continue
-    else:
-        print(new_msg)
+    new_data = data_queue.get()
+    print(f'new data extracted: {new_data[0]} {new_data[1][0, 0]}\n')
+    if new_data[0]['value'] == 'break':
+        print('reached end. exiting')
         break
 
-server.test_lock()
-server.test_shared_memory()
-server.shutdown()
+
+# server.start()
+# first_msg = server.test_data_alone()
+#
+# while True:
+#     new_msg = server.test_data_with_node()
+#     if new_msg['time'] <= first_msg['time']:
+#         sleep(1)
+#         continue
+#     else:
+#         print(new_msg)
+#         break
+#
+# server.test_lock()
+# server.test_shared_memory()
+# server.shutdown()
