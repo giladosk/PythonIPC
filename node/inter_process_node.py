@@ -50,6 +50,7 @@ class InterProcessNode:
     def start(self):
         print('subscribed to data stream...\n')
         while True:
+            # TODO: wrap in try-except to re-establish lost connections
             try:
                 new_results = self.feed_queue.get_nowait()
                 print(f'data extracted from queue: {new_results["value"]}')
@@ -65,8 +66,8 @@ class InterProcessNode:
                 self._lock.release()
                 print('data is shared\n')
                 # exit condition:
-                if new_results['value'] == 'abort':
-                    print('reached end. exiting')
+                if new_results['value'] == 'break':
+                    print('reached end')
                     break
             else:
                 # locked by server, sleep and try again later
@@ -106,12 +107,12 @@ sleep(3)
 feed1 = {'time': 1, 'value': 'good', 'array': np.full_like(array_template, fill_value=1)}
 print('putting feed1 into queue')
 data_queue.put(feed1)
-sleep(10)
+sleep(5)
 
 feed2 = {'time': 2, 'value': 'still good', 'array': np.full_like(array_template, fill_value=5)}
 print('putting feed2 into queue')
 data_queue.put(feed2)
-sleep(10)
+sleep(5)
 
 feed3 = {'time': 3, 'value': 'break', 'array': np.full_like(array_template, fill_value=-1)}
 print('putting feed3 into queue')

@@ -5,4 +5,4 @@ WORKDIR /app
 COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD [ "python3", "./inter_process_node.py" ]
+CMD [ "python3", "-u", "./inter_process_node.py" ]

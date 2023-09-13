@@ -66,8 +66,9 @@ class InterProcessServer:
                         self.consumer_queue.put((data_in_shmem, self.shared_array))
 
                     # exit condition:
-                    if data_in_shmem['value'] == 'abort':
+                    if data_in_shmem['value'] == 'break':
                         self._lock.release()
+                        print('got shutdown keyword')
                         break
                 else:
                     sleep(0.01)
@@ -127,7 +128,6 @@ while True:
     new_data = data_queue.get()
     print(f'new data extracted: {new_data[0]} {new_data[1][0, 0]}\n')
     if new_data[0]['value'] == 'break':
-        print('reached end. exiting')
         break
 
 
