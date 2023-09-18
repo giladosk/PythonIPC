@@ -64,11 +64,12 @@ class InterProcessServer:
                 if data_in_shmem['time'] > self.latest_timestamp:
                     print(f'got new data, hurray!')
                     self.latest_timestamp = data_in_shmem['time']
+                    data_to_queue = {'time': data_in_shmem['time'], 'value': data_in_shmem['value'], 'array': self.shared_array}
                     try:  # push most recent data to the consumer queue
-                        self.consumer_queue.put_nowait((data_in_shmem, self.shared_array))
+                        self.consumer_queue.put_nowait(data_to_queue)
                     except Full:
                         self.consumer_queue.get()
-                        self.consumer_queue.put((data_in_shmem, self.shared_array))
+                        self.consumer_queue.put(data_to_queue)
 
                     # exit condition:
                     if data_in_shmem['value'] == 'break':
@@ -101,7 +102,7 @@ server = InterProcessServer(ipc_address=address, shmem_name=SHM_NAME, shmem_temp
 
 while True:
     new_data = data_queue.get()
-    print(f'new data extracted: {new_data[0]} {new_data[1][0, 0]}\n')
-    if new_data[0]['value'] == 'break':
+    print(f'new data extracted: {new_data["time"]}, {new_data["value"]}, {new_data["array"][0, 0]}\n')
+    if new_data['value'] == 'break':
         break
 
